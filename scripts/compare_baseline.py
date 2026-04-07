@@ -26,9 +26,11 @@ def build_regressions(current: dict, baseline: dict) -> tuple[str, list[str], di
     baseline_summary = baseline["summary"]
 
     deltas = {
-        "architecture_score": current_summary["architecture_score"] - baseline_summary["architecture_score"],
+        "architecture_score": current_summary["architecture_score"]
+        - baseline_summary["architecture_score"],
         "cycle_count": current_summary["cycle_count"] - baseline_summary["cycle_count"],
-        "internal_edge_count": current_summary["internal_edge_count"] - baseline_summary["internal_edge_count"],
+        "internal_edge_count": current_summary["internal_edge_count"]
+        - baseline_summary["internal_edge_count"],
         "module_count": current_summary["module_count"] - baseline_summary["module_count"],
     }
 
@@ -38,8 +40,16 @@ def build_regressions(current: dict, baseline: dict) -> tuple[str, list[str], di
     if deltas["architecture_score"] <= -10:
         regressions.append("Architecture score dropped by 10 points or more.")
 
-    current_hotspot = current["hotspots"]["highest_fan_in"][0]["fan_in"] if current["hotspots"]["highest_fan_in"] else 0
-    baseline_hotspot = baseline["hotspots"]["highest_fan_in"][0]["fan_in"] if baseline["hotspots"]["highest_fan_in"] else 0
+    current_hotspot = (
+        current["hotspots"]["highest_fan_in"][0]["fan_in"]
+        if current["hotspots"]["highest_fan_in"]
+        else 0
+    )
+    baseline_hotspot = (
+        baseline["hotspots"]["highest_fan_in"][0]["fan_in"]
+        if baseline["hotspots"]["highest_fan_in"]
+        else 0
+    )
     deltas["highest_fan_in"] = current_hotspot - baseline_hotspot
     if deltas["highest_fan_in"] >= 2:
         regressions.append("Highest fan-in module became significantly more central.")
@@ -53,7 +63,9 @@ def build_regressions(current: dict, baseline: dict) -> tuple[str, list[str], di
     return status, regressions, deltas
 
 
-def build_markdown(status: str, regressions: list[str], deltas: dict[str, int], current: dict, baseline: dict) -> str:
+def build_markdown(
+    status: str, regressions: list[str], deltas: dict[str, int], current: dict, baseline: dict
+) -> str:
     status_label = {"pass": "PASS", "warn": "WARN", "fail": "FAIL"}[status]
     lines = [
         f"## Architecture Baseline Comparison: {status_label}",

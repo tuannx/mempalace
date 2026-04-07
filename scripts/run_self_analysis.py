@@ -59,7 +59,9 @@ def discover_python_files(source_path: Path) -> list[Path]:
     return files
 
 
-def detect_package_roots(source_path: Path, python_files: Iterable[Path], algorithm: str) -> list[Path]:
+def detect_package_roots(
+    source_path: Path, python_files: Iterable[Path], algorithm: str
+) -> list[Path]:
     if algorithm != "pkg":
         return [source_path]
 
@@ -109,7 +111,6 @@ def classify_module(module_name: str) -> str:
 
 def resolve_relative_import(module_name: str, imported: str | None, level: int) -> str | None:
     parts = module_name.split(".")
-    base = parts[:-1]
     if level > len(parts):
         return imported
     anchor = parts[:-level]
@@ -191,7 +192,9 @@ def tarjan(graph: dict[str, list[str]]) -> list[list[str]]:
     return sorted(components)
 
 
-def score_architecture(cycle_count: int, max_fan_in: int, max_fan_out: int, shared_deps: int) -> int:
+def score_architecture(
+    cycle_count: int, max_fan_in: int, max_fan_out: int, shared_deps: int
+) -> int:
     score = 100
     score -= cycle_count * 20
     if max_fan_in > 4:
@@ -203,7 +206,9 @@ def score_architecture(cycle_count: int, max_fan_in: int, max_fan_out: int, shar
     return max(0, min(100, score))
 
 
-def build_risks(records: list[ModuleRecord], cycles: list[list[str]], shared_deps: list[dict[str, object]]) -> list[dict[str, object]]:
+def build_risks(
+    records: list[ModuleRecord], cycles: list[list[str]], shared_deps: list[dict[str, object]]
+) -> list[dict[str, object]]:
     risks: list[dict[str, object]] = []
     if cycles:
         risks.append(
@@ -251,7 +256,12 @@ def build_risks(records: list[ModuleRecord], cycles: list[list[str]], shared_dep
     return risks
 
 
-def summarize(records: list[ModuleRecord], cycles: list[list[str]], package_roots: list[Path], source_path: Path) -> dict[str, object]:
+def summarize(
+    records: list[ModuleRecord],
+    cycles: list[list[str]],
+    package_roots: list[Path],
+    source_path: Path,
+) -> dict[str, object]:
     external_counter: Counter[str] = Counter()
     dependency_index: dict[str, list[str]] = defaultdict(list)
     for record in records:
@@ -272,11 +282,15 @@ def summarize(records: list[ModuleRecord], cycles: list[list[str]], package_root
 
     highest_fan_in = [
         {"module": record.name, "fan_in": record.fan_in, "path": record.path}
-        for record in sorted(records, key=lambda item: (item.fan_in, item.fan_out, item.name), reverse=True)[:5]
+        for record in sorted(
+            records, key=lambda item: (item.fan_in, item.fan_out, item.name), reverse=True
+        )[:5]
     ]
     highest_fan_out = [
         {"module": record.name, "fan_out": record.fan_out, "path": record.path}
-        for record in sorted(records, key=lambda item: (item.fan_out, item.fan_in, item.name), reverse=True)[:5]
+        for record in sorted(
+            records, key=lambda item: (item.fan_out, item.fan_in, item.name), reverse=True
+        )[:5]
     ]
 
     loc_values = [record.loc for record in records]
@@ -343,9 +357,7 @@ def generate_markdown(report: dict[str, object]) -> str:
     if hotspots["shared_external_dependencies"]:
         lines.append("Shared external dependencies:")
         for item in hotspots["shared_external_dependencies"]:
-            lines.append(
-                f"- {item['dependency']}: used by {item['module_count']} modules"
-            )
+            lines.append(f"- {item['dependency']}: used by {item['module_count']} modules")
         lines.append("")
 
     lines.extend(["## Risks", ""])

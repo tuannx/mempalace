@@ -109,7 +109,7 @@ jobs:
             --output-md outputs/architecture-compare.md
 
       - name: Build PR comment
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         run: |
           set -euo pipefail
           {
@@ -130,7 +130,7 @@ jobs:
           } > outputs/pr-comment.md
 
       - name: Update PR comment
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/github-script@v7
         with:
           script: |
@@ -167,6 +167,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: architecture-analysis
+          if-no-files-found: error
           path: |
             outputs/architecture-analysis.json
             outputs/architecture-analysis.md
