@@ -112,22 +112,13 @@ jobs:
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         run: |
           set -euo pipefail
-          {
-            echo '<!-- architecture-analysis -->'
-            echo '## Architecture Analysis'
-            echo
-            if [ -f outputs/architecture-compare.md ]; then
-              cat outputs/architecture-compare.md
-            else
-              echo 'Baseline artifact not found yet. This run published the current architecture snapshot only.'
-              echo
-            fi
-            echo '<details><summary>Current report</summary>'
-            echo
-            cat outputs/architecture-analysis.md
-            echo
-            echo '</details>'
-          } > outputs/pr-comment.md
+          python tooling/scripts/render_architecture_comment.py \
+            --current outputs/architecture-analysis.json \
+            --baseline baseline/architecture-analysis.json \
+            --compare outputs/architecture-compare.json \
+            --output outputs/pr-comment.md \
+            --run-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            --tooling-repository "${{ inputs.tooling-repository }}"
 
       - name: Update PR comment
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
