@@ -1,0 +1,182 @@
+name: Architecture Analysis Reusable
+
+on:
+  workflow_call:
+    inputs:
+      source-path:
+        description: Path to the repository source tree to analyze.
+        required: false
+        default: .
+        type: string
+      primary-algorithm:
+        description: Analysis strategy. Use pkg for package-oriented Python repos.
+        required: false
+        default: pkg
+        type: string
+      baseline-workflow-id:
+        description: Workflow filename used to publish the baseline artifact on main.
+        required: false
+        default: architecture-analysis.yml
+        type: string
+      tooling-repository:
+        description: Repository containing the analysis scripts.
+        required: false
+        default: milla-jovovich/mempalace
+        type: string
+      tooling-ref:
+        description: Tag, branch, or commit SHA for the tooling repository.
+        required: false
+        default: main
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  architecture-analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source repository
+        uses: actions/checkout@v4
+        with:
+          path: source
+
+      - name: Checkout tooling repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.tooling-repository }}
+          ref: ${{ inputs.tooling-ref }}
+          path: tooling
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run architecture analysis
+        run: |
+          set -euo pipefail
+          mkdir -p outputs
+          python tooling/scripts/run_self_analysis.py \
+            --source-path "source/${{ inputs.source-path }}" \
+            --primary-algorithm "${{ inputs.primary-algorithm }}" \
+            --output-json outputs/architecture-analysis.json \
+            --output-md outputs/architecture-analysis.md
+
+      - name: Restore baseline artifact
+        id: baseline
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASELINE_WORKFLOW_ID: ${{ inputs.baseline-workflow-id }}
+        run: |
+          set -euo pipefail
+          mkdir -p baseline
+          run_id="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${BASELINE_WORKFLOW_ID}/runs?branch=main&status=completed&per_page=20" --jq '.workflow_runs[] | select(.conclusion == "success") | .id' | head -n 1 || true)"
+
+          if [ -z "$run_id" ]; then
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          archive_url="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts" --jq '.artifacts[] | select(.name == "architecture-baseline") | .archive_download_url' | head -n 1 || true)"
+
+          if [ -z "$archive_url" ]; then
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" "$archive_url" -o baseline/baseline.zip
+          unzip -q -o baseline/baseline.zip -d baseline
+          if [ -f baseline/architecture-analysis.json ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Compare against baseline
+        if: steps.baseline.outputs.found == 'true'
+        id: compare
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          python tooling/scripts/compare_baseline.py \
+            --current outputs/architecture-analysis.json \
+            --baseline baseline/architecture-analysis.json \
+            --output-json outputs/architecture-compare.json \
+            --output-md outputs/architecture-compare.md
+
+      - name: Build PR comment
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          set -euo pipefail
+          python tooling/scripts/render_architecture_comment.py \
+            --current outputs/architecture-analysis.json \
+            --baseline baseline/architecture-analysis.json \
+            --compare outputs/architecture-compare.json \
+            --output outputs/pr-comment.md \
+            --run-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            --tooling-repository "${{ inputs.tooling-repository }}"
+
+      - name: Update PR comment
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('outputs/pr-comment.md', 'utf8');
+            const marker = '<!-- architecture-analysis -->';
+            const {owner, repo} = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number,
+              per_page: 100,
+            });
+
+            const existing = comments.find((comment) => comment.body && comment.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body,
+              });
+            }
+
+      - name: Upload architecture report
+        uses: actions/upload-artifact@v4
+        with:
+          name: architecture-analysis
+          if-no-files-found: error
+          path: |
+            outputs/architecture-analysis.json
+            outputs/architecture-analysis.md
+            outputs/architecture-compare.json
+            outputs/architecture-compare.md
+
+      - name: Upload baseline artifact
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: architecture-baseline
+          path: |
+            outputs/architecture-analysis.json
+            outputs/architecture-analysis.md
+
+      - name: Enforce architecture gate
+        if: steps.baseline.outputs.found == 'true' && steps.compare.outcome == 'failure'
+        run: |
+          set -euo pipefail
+          echo "Architecture regression detected against the published baseline."
+          exit 1
